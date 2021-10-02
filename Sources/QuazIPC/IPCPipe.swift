@@ -5,7 +5,7 @@ import XPC
 import Foundation
 
 public protocol IPCPipeDelegate {
-    func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyPipe: IPCPipe?)
+    func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?)
     func pipe(_ pipe: IPCPipe, failedWriteWithError error: CInt)
     func pipe(_ pipe: IPCPipe, failedReceiveWithError error: CInt)
 }
@@ -101,7 +101,7 @@ public class IPCPipe {
             }
             
             // Pass message to the delegate
-            delegate?.pipe(self, receivedMessage: message, replyPipe: replyPipe)
+            delegate?.pipe(self, receivedMessage: message, replyID: replyID, replyPipe: replyPipe)
         } else {
             self.errno = result
             self.delegate?.pipe(self, failedReceiveWithError: result)
@@ -110,16 +110,11 @@ public class IPCPipe {
     
     // MARK: - Writing
     
-    private func write(message: xpc_object_t, replyID: UUID? = nil) {
+    public func write(message: xpc_object_t, replyID: UUID? = nil) {
         errno = xpc_pipe_routine_async(pipe, xpc_pack(recv_port: recv_port, reply_id: replyID, message: message), recv_port)
         if _slowPath(errno != 0) {
             delegate?.pipe(self, failedWriteWithError: errno)
         }
-    }
-    
-    /// Writes a message
-    public func write(message: xpc_object_t) {
-        write(message: message, replyID: nil)
     }
     
     /// Writes a message and invokes a callback when a response is received

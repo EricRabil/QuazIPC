@@ -23,8 +23,8 @@ struct EncodingProxy: Encodable {
 public extension IPCPipe {
     typealias TypedReplyBlock<P> = (P, IPCPipe?) -> ()
     
-    func write(_ encodable: Encodable) throws {
-        try write(message: XPCEncoder.encode(EncodingProxy(encodable)))
+    func write(_ encodable: Encodable, replyID: UUID? = nil) throws {
+        try write(message: XPCEncoder.encode(EncodingProxy(encodable)), replyID: replyID)
     }
     
     func write<Output: Decodable>(_ encodable: Encodable, replyBlock: @escaping TypedReplyBlock<Output>) throws {
