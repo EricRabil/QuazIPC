@@ -38,6 +38,9 @@ public func xpc_dictionary_copy_mach_send(_ dictionary: xpc_object_t, _ key: Uns
 @_silgen_name("xpc_pipe_invalidate")
 func xpc_pipe_invalidate(_ pipe: xpc_pipe_t)
 
+@_silgen_name("xpc_dictionary_get_audit_token")
+func xpc_dictionary_get_audit_token(_ dict: xpc_object_t, _ audit: UnsafeMutablePointer<audit_token_t>)
+
 private let MACH_PORT_TYPE_SEND_RIGHTS: UInt32 = 65536
 
 func mach_port_send_valid(_ port: mach_port_t) -> Bool {

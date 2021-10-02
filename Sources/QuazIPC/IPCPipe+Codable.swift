@@ -21,26 +21,26 @@ struct EncodingProxy: Encodable {
 }
 
 public extension IPCPipe {
-    typealias TypedReplyBlock<P> = (P, IPCPipe?) -> ()
+    typealias TypedReplyBlock<P> = (P, audit_token_t, IPCPipe?) -> ()
     
     func write(_ encodable: Encodable, replyID: UUID? = nil) throws {
         try write(message: XPCEncoder.encode(EncodingProxy(encodable)), replyID: replyID)
     }
     
     func write<Output: Decodable>(_ encodable: Encodable, replyBlock: @escaping TypedReplyBlock<Output>) throws {
-        try write(message: XPCEncoder.encode(EncodingProxy(encodable))) { response, pipe in
+        try write(message: XPCEncoder.encode(EncodingProxy(encodable))) { response, token, pipe in
             do {
-                try replyBlock(XPCDecoder.decode(Output.self, message: response), pipe)
+                try replyBlock(XPCDecoder.decode(Output.self, message: response), token, pipe)
             } catch {
                 
             }
         }
     }
     
-    func readwrite<Output: Decodable>(_ encodable: Encodable) throws -> (output: Output, replyPipe: IPCPipe?) {
-        let (response, pipe) = try readwrite(message: XPCEncoder.encode(EncodingProxy(encodable)))
+    func readwrite<Output: Decodable>(_ encodable: Encodable) throws -> (output: Output, token: audit_token_t, replyPipe: IPCPipe?) {
+        let (response, token, pipe) = try readwrite(message: XPCEncoder.encode(EncodingProxy(encodable)))
         
-        return (try XPCDecoder.decode(Output.self, message: response), pipe)
+        return (try XPCDecoder.decode(Output.self, message: response), token, pipe)
     }
     
     func readwrite<Output: Decodable>(_ encodable: Encodable) throws -> Output {

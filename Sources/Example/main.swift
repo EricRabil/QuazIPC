@@ -27,7 +27,7 @@ struct ClientHello: Codable {
     }
 }
 
-let mach_name = "sussy-baka"
+let mach_name = "sussy-ba"
 
 if ProcessInfo.processInfo.arguments.contains("server") {
     guard let server_pipe = IPCPipe(local: mach_name) else {
@@ -35,10 +35,11 @@ if ProcessInfo.processInfo.arguments.contains("server") {
     }
     
     class IPCDelegate: IPCPipeDelegate {
-        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?) {
+        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, auditToken: audit_token_t, replyID: UUID?, replyPipe: IPCPipe?) {
             do {
                 try print(XPCDecoder.decode(ClientHello.self, message: message).message)
-                try replyPipe!.write(ServerHello(message: "You're cool"), replyID: replyID)
+                
+                try replyPipe!.write(ServerHello(message: "You're cool, also, i know who you are miss \(auditToken.pid) \(auditToken.auid)"), replyID: replyID)
             } catch {
                 print("Failed to reply!", error)
             }
@@ -64,17 +65,27 @@ if ProcessInfo.processInfo.arguments.contains("server") {
             self.client = client
         }
         
-        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?) {
+        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, auditToken: audit_token_t, replyID: UUID?, replyPipe: IPCPipe?) {
 //            print(message.debugDescription ?? message.description)
         }
         
+        var reconnecting = false
+        
         func reconnect() {
+            reconnecting = true
+            
             if !client.reconnect(remote: mach_name) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: reconnect)
+            } else {
+                reconnecting = false
             }
         }
         
         func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t) {
+            if reconnecting {
+                return
+            }
+            
             reconnect()
         }
         

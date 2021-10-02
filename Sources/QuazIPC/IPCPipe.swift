@@ -5,7 +5,7 @@ import XPC
 import Foundation
 
 public protocol IPCPipeDelegate {
-    func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?)
+    func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, auditToken: audit_token_t, replyID: UUID?, replyPipe: IPCPipe?)
     func pipe(_ pipe: IPCPipe, failedWriteWithError error: CInt)
     func pipe(_ pipe: IPCPipe, failedReceiveWithError error: CInt)
     func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t)
@@ -22,7 +22,7 @@ public extension IPCPipeDelegate {
 func dispatch_get_current_queue() -> Unmanaged<DispatchQueue>
 
 public class IPCPipe {
-    public typealias ReplyBlock = (xpc_object_t, IPCPipe?) -> ()
+    public typealias ReplyBlock = (xpc_object_t, audit_token_t, IPCPipe?) -> ()
     
     public var errno: CInt = 0
     public var delegate: IPCPipeDelegate?
@@ -92,9 +92,12 @@ public class IPCPipe {
                 return IPCPipe(send_port: reply_port, inheriting: self)
             }()
             
+            var audit_token = audit_token_t()
+            xpc_dictionary_get_audit_token(object, &audit_token)
+            
             if let replyID = replyID, let replyBlock = replyBlocks.removeValue(forKey: replyID) {
                 // Pass reply to the pending block
-                replyBlock(message, replyPipe)
+                replyBlock(message, audit_token, replyPipe)
                 
                 if !forwardRepliesToDelegate {
                     return
@@ -102,7 +105,7 @@ public class IPCPipe {
             }
             
             // Pass message to the delegate
-            mainDelegate { $0.pipe(self, receivedMessage: message, replyID: replyID, replyPipe: replyPipe) }
+            mainDelegate { $0.pipe(self, receivedMessage: message, auditToken: audit_token, replyID: replyID, replyPipe: replyPipe) }
         } else {
             self.errno = result
             mainDelegate { $0.pipe(self, failedReceiveWithError: result) }
@@ -114,7 +117,7 @@ public class IPCPipe {
     public func write(message: xpc_object_t, replyID: UUID? = nil) {
         if !sendPortValid {
             if let replyID = replyID {
-                replyBlocks.removeValue(forKey: replyID)?(xpc_null_create(), nil)
+                replyBlocks.removeValue(forKey: replyID)?(xpc_null_create(), audit_token_t(), nil)
             }
             
             mainDelegate { $0.pipe(self, sendPortInvalidated: send_port) }
@@ -134,9 +137,9 @@ public class IPCPipe {
         if queue == Self.queue {
             replyBlocks[replyID] = replyBlock
         } else {
-            replyBlocks[replyID] = { msg, pipe in
+            replyBlocks[replyID] = { msg, token, pipe in
                 queue.async {
-                    replyBlock(msg, pipe)
+                    replyBlock(msg, token, pipe)
                 }
             }
         }
@@ -208,26 +211,34 @@ public extension IPCPipe {
 // MARK: - Synchronous Helpers
 public extension IPCPipe {
     /// Sends a message and synchronously waits for a response
-    func readwrite(message: xpc_object_t) -> (output: xpc_object_t, replyPipe: IPCPipe?) {
+    func readwrite(message: xpc_object_t) -> (output: xpc_object_t, token: audit_token_t, replyPipe: IPCPipe?) {
         let semaphore = DispatchSemaphore(value: 0)
+        let original = pipe
         var result = xpc_null_create()
+        var token = audit_token_t()
         var pipe: IPCPipe? = nil
         
-        write(message: message, queue: Self.queue) { response, replyPipe in
+        write(message: message, queue: Self.queue) { response, responseToken, replyPipe in
             result = response
+            token = responseToken
             pipe = replyPipe
             semaphore.signal()
         }
         
         semaphore.wait()
         
+        if original !== self.pipe {
+            // the connection was replaced, and the message failed
+            return readwrite(message: message)
+        }
+        
         // fix memory leak
-        return (result, pipe)
+        return (result, token, pipe)
     }
     
     /// Sends a message and synchronously waits for a response
     func readwrite(message: xpc_object_t) -> xpc_object_t {
-        let (result, _) = readwrite(message: message)
+        let (result, _, _) = readwrite(message: message)
         return result
     }
 }
