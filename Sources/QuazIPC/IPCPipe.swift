@@ -23,7 +23,7 @@ public class IPCPipe {
     public var delegate: IPCPipeDelegate?
     public var forwardRepliesToDelegate = false
     
-    public var sendPortInvalidated: Bool {
+    public var sendPortValid: Bool {
         mach_port_send_valid(send_port)
     }
     
