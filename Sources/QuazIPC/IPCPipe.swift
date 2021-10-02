@@ -8,13 +8,18 @@ public protocol IPCPipeDelegate {
     func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?)
     func pipe(_ pipe: IPCPipe, failedWriteWithError error: CInt)
     func pipe(_ pipe: IPCPipe, failedReceiveWithError error: CInt)
+    func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t)
 }
 
 // Default implementation for error handlers (living dangerously)
 public extension IPCPipeDelegate {
     func pipe(_ pipe: IPCPipe, failedWriteWithError error: CInt) {}
     func pipe(_ pipe: IPCPipe, failedReceiveWithError error: CInt) {}
+    func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t) {}
 }
+
+@_silgen_name("dispatch_get_current_queue")
+func dispatch_get_current_queue() -> Unmanaged<DispatchQueue>
 
 public class IPCPipe {
     public typealias ReplyBlock = (xpc_object_t, IPCPipe?) -> ()
@@ -28,7 +33,7 @@ public class IPCPipe {
     }
     
     // All pipes have their own DispatchQueue whose parent is the superqueue
-    private static let superqueue = DispatchQueue(label: "com.ericrabil.quazipc.superqueue")
+    private static let queue = DispatchQueue(label: "com.ericrabil.quazipc.superqueue", qos: .userInitiated, attributes: [], autoreleaseFrequency: frequency)
     
     // Communication context
     private var pipe: xpc_pipe_t
@@ -37,9 +42,8 @@ public class IPCPipe {
     
     // State management
     private var replyBlocks: [UUID: ReplyBlock] = [:]
-    private lazy var queue: DispatchQueue = DispatchQueue(label: "com.ericrabil.quazipc.pipe", qos: .userInitiated, attributes: [], autoreleaseFrequency: frequency, target: IPCPipe.superqueue)
     private lazy var source: DispatchSourceMachReceive = {
-        let source = DispatchSource.makeMachReceiveSource(port: recv_port, queue: queue)
+        let source = DispatchSource.makeMachReceiveSource(port: recv_port, queue: Self.queue)
         
         source.setEventHandler(handler: receive)
         
@@ -54,7 +58,7 @@ public class IPCPipe {
         return source
     }()
     
-    private init(delegate: IPCPipeDelegate? = nil, pipe: xpc_pipe_t, send_port: mach_port_t = 0, recv_port: mach_port_t = 0, queue: DispatchQueue? = nil, source: DispatchSourceMachReceive? = nil) {
+    private init(delegate: IPCPipeDelegate? = nil, pipe: xpc_pipe_t, send_port: mach_port_t = 0, recv_port: mach_port_t = 0, source: DispatchSourceMachReceive? = nil) {
         self.delegate = delegate
         self.pipe = pipe
         self.send_port = send_port
@@ -62,14 +66,11 @@ public class IPCPipe {
         if let source = source {
             self.source = source
         }
-        if let queue = queue {
-            self.queue = queue
-        }
     }
     
     // Used to create a contextual pipe off of an existing DispatchSource/port setup
     private convenience init(send_port: mach_port_t, inheriting basePipe: IPCPipe) {
-        self.init(delegate: basePipe.delegate, pipe: xpc_pipe_create_from_port(send_port, 0), send_port: send_port, recv_port: basePipe.recv_port, queue: basePipe.queue, source: basePipe.source)
+        self.init(delegate: basePipe.delegate, pipe: xpc_pipe_create_from_port(send_port, 0), send_port: send_port, recv_port: basePipe.recv_port, source: basePipe.source)
     }
     
     // MARK: - Reading
@@ -101,27 +102,62 @@ public class IPCPipe {
             }
             
             // Pass message to the delegate
-            delegate?.pipe(self, receivedMessage: message, replyID: replyID, replyPipe: replyPipe)
+            mainDelegate { $0.pipe(self, receivedMessage: message, replyID: replyID, replyPipe: replyPipe) }
         } else {
             self.errno = result
-            self.delegate?.pipe(self, failedReceiveWithError: result)
+            mainDelegate { $0.pipe(self, failedReceiveWithError: result) }
         }
     }
     
     // MARK: - Writing
     
     public func write(message: xpc_object_t, replyID: UUID? = nil) {
+        if !sendPortValid {
+            if let replyID = replyID {
+                replyBlocks.removeValue(forKey: replyID)?(xpc_null_create(), nil)
+            }
+            
+            mainDelegate { $0.pipe(self, sendPortInvalidated: send_port) }
+            return
+        }
+        
         errno = xpc_pipe_routine_async(pipe, xpc_pack(recv_port: recv_port, reply_id: replyID, message: message), recv_port)
         if _slowPath(errno != 0) {
-            delegate?.pipe(self, failedWriteWithError: errno)
+            mainDelegate { $0.pipe(self, failedWriteWithError: errno) }
         }
     }
     
     /// Writes a message and invokes a callback when a response is received
-    public func write(message: xpc_object_t, replyBlock: @escaping ReplyBlock) {
+    public func write(message: xpc_object_t, queue: DispatchQueue = .main, replyBlock: @escaping ReplyBlock) {
         let replyID = UUID()
-        replyBlocks[replyID] = replyBlock
+        
+        if queue == Self.queue {
+            replyBlocks[replyID] = replyBlock
+        } else {
+            replyBlocks[replyID] = { msg, pipe in
+                queue.async {
+                    replyBlock(msg, pipe)
+                }
+            }
+        }
+        
         write(message: message, replyID: replyID)
+    }
+    
+    private func main<P>(_ callback: @autoclosure () -> P) {
+        if dispatch_get_current_queue().takeUnretainedValue() == .main {
+            let _ = callback()
+        } else {
+            let _ = DispatchQueue.main.sync(execute: callback)
+        }
+    }
+    
+    private func mainDelegate<P>(_ callback: (IPCPipeDelegate) -> P) {
+        guard let delegate = delegate else {
+            return
+        }
+        
+        main(callback(delegate))
     }
 }
 
@@ -152,6 +188,21 @@ public extension IPCPipe {
         
         self.init(send_port: port, recv_port: recv_port)
     }
+    
+    func reconnect(remote name: UnsafePointer<CChar>) -> Bool {
+        var port: mach_port_t = 0
+        
+        guard bootstrap_look_up(bootstrap_port, name, &port) == KERN_SUCCESS else {
+            return false
+        }
+        
+        send_port = port
+        xpc_pipe_invalidate(self.pipe)
+        pipe = xpc_pipe_create_from_port(port, 0)
+        errno = 0
+        
+        return true
+    }
 }
 
 // MARK: - Synchronous Helpers
@@ -162,13 +213,14 @@ public extension IPCPipe {
         var result = xpc_null_create()
         var pipe: IPCPipe? = nil
         
-        write(message: message) { response, replyPipe in
+        write(message: message, queue: Self.queue) { response, replyPipe in
             result = response
             pipe = replyPipe
             semaphore.signal()
         }
         
         semaphore.wait()
+        
         // fix memory leak
         return (result, pipe)
     }

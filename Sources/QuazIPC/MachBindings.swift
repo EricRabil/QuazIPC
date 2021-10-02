@@ -44,7 +44,6 @@ func mach_port_send_valid(_ port: mach_port_t) -> Bool {
     var type: mach_port_type_t = 0
     
     if mach_port_type(mach_task_self_, port, &type) != KERN_SUCCESS || (0 == (type & MACH_PORT_TYPE_SEND_RIGHTS)) {
-        print(type)
         return false
     }
     
