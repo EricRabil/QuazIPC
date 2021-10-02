@@ -1,3 +1,3 @@
 # QuazIPC
 
-A description of this package.
+Dynamically registered xpc connections powered by xpc_pipe_t

@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "CodableXPC",
+        "repositoryURL": "https://github.com/daniel-grumberg/CodableXPC",
+        "state": {
+          "branch": null,
+          "revision": "c28657b4cbe0e72a8aeb49079ced2a435a085253",
+          "version": "1.0.0"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
