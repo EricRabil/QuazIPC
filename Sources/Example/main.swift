@@ -7,85 +7,100 @@
 
 import Foundation
 import QuazIPC
+import CodableXPC
 
-@objc protocol IPCProtocol {
-    func hello()
-}
-
-extension NSXPCListenerEndpoint {
-    var _endpoint: xpc_endpoint_t {
-        get {
-            unsafeBitCast(perform(Selector("_endpoint")).takeUnretainedValue(), to: xpc_endpoint_t.self)
-        }
-        set {
-            perform(Selector("_setEndpoint:"), with: newValue)
-        }
+struct ServerHello: Codable {
+    var type = "server-hello"
+    var message: String
+    
+    init(message: String) {
+        self.message = message
     }
 }
 
+struct ClientHello: Codable {
+    var type = "client-hello"
+    var message: String
+    
+    init(message: String) {
+        self.message = message
+    }
+}
+
+let mach_name = "sussy-baka"
+
 if ProcessInfo.processInfo.arguments.contains("server") {
-    guard let server_pipe = IPCPipe(local: "sussy-baka") else {
+    guard let server_pipe = IPCPipe(local: mach_name) else {
         exit(-1)
     }
     
-    class IPCDelegate: NSObject, NSXPCListenerDelegate, IPCProtocol, IPCPipeDelegate {
-        let listener: NSXPCListener
-        
-        init(listener: NSXPCListener) {
-            self.listener = listener
+    class IPCDelegate: IPCPipeDelegate {
+        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?) {
+            do {
+                try print(XPCDecoder.decode(ClientHello.self, message: message).message)
+                try replyPipe!.write(ServerHello(message: "You're cool"), replyID: replyID)
+            } catch {
+                print("Failed to reply!", error)
+            }
         }
         
-        func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
-            true
-        }
-        
-        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyPipe: IPCPipe?) {
-            let response = xpc_dictionary_create(nil, nil, 0)
-//            xpc_dictionary_set_mach_send(response, "endpoint", xpc_endpoint_copy_listener_port_4sim(listener.endpoint._endpoint))
-            xpc_dictionary_set_value(response, "endpoint", listener.endpoint._endpoint)
-            xpc_dictionary_set_value(response, "reply_id", xpc_dictionary_get_value(message, "reply_id"))
-            replyPipe!.write(message: response)
-        }
-        
-        func hello() {
-            print("its me")
+        func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t) {
+            
         }
     }
     
-    let listener = NSXPCListener.anonymous()
-    let delegate = IPCDelegate(listener: listener)
-    listener.delegate = delegate
-    server_pipe.delegate = delegate
-    
-    listener.resume()
+    server_pipe.delegate = IPCDelegate()
     
     dispatchMain()
 } else {
-    guard let client_pipe = IPCPipe(remote: "sussy-baka") else {
+    guard let client_pipe = IPCPipe(remote: mach_name) else {
         exit(-1)
     }
     
-    let object = xpc_dictionary_create(nil, nil, 0)
-    xpc_dictionary_set_value(object, "hey", xpc_string_create("asdf"))
-    let endpoint = xpc_dictionary_get_value(client_pipe.readwrite(message: object), "endpoint")! as xpc_endpoint_t
-    print(endpoint)
-    let nsEndpoint = NSXPCListenerEndpoint()
-    nsEndpoint._endpoint = endpoint
+    class IPCDelegate: IPCPipeDelegate {
+        let client: IPCPipe
+        
+        init(client: IPCPipe) {
+            self.client = client
+        }
+        
+        func pipe(_ pipe: IPCPipe, receivedMessage message: xpc_object_t, replyID: UUID?, replyPipe: IPCPipe?) {
+//            print(message.debugDescription ?? message.description)
+        }
+        
+        func reconnect() {
+            if !client.reconnect(remote: mach_name) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: reconnect)
+            }
+        }
+        
+        func pipe(_ pipe: IPCPipe, sendPortInvalidated sendPort: mach_port_t) {
+            reconnect()
+        }
+        
+        func run() {
+            defer {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: run)
+            }
+            
+            do {
+                let reply: ServerHello = try client.readwrite(ClientHello(message: "Hey bestie!"))
+                print(reply.message)
+            } catch {
+                if !client.sendPortValid {
+                    return
+                }
+                
+                print("failed to parse: \(error)")
+            }
+        }
+    }
     
-    print(xpc_connection_create_from_endpoint(endpoint))
+    let delegate = IPCDelegate(client: client_pipe)
+    client_pipe.delegate = delegate
+    client_pipe.forwardRepliesToDelegate = true
     
-    let connection = NSXPCConnection(listenerEndpoint: nsEndpoint)
+    delegate.run()
     
-    connection.remoteObjectInterface = NSXPCInterface(with: IPCProtocol.self)
-    
-    connection.resume()
-    
-    let interface = connection.remoteObjectProxyWithErrorHandler { error in
-        print(error)
-    } as? IPCProtocol
-    
-    interface?.hello()
-    
-    print(connection)
-    print("ha")
+    dispatchMain()
 }
