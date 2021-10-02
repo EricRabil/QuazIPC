@@ -23,6 +23,10 @@ public class IPCPipe {
     public var delegate: IPCPipeDelegate?
     public var forwardRepliesToDelegate = false
     
+    public var sendPortInvalidated: Bool {
+        mach_port_send_valid(send_port)
+    }
+    
     // All pipes have their own DispatchQueue whose parent is the superqueue
     private static let superqueue = DispatchQueue(label: "com.ericrabil.quazipc.superqueue")
     

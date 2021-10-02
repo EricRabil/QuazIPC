@@ -37,3 +37,16 @@ public func xpc_dictionary_copy_mach_send(_ dictionary: xpc_object_t, _ key: Uns
 
 @_silgen_name("xpc_pipe_invalidate")
 func xpc_pipe_invalidate(_ pipe: xpc_pipe_t)
+
+private let MACH_PORT_TYPE_SEND_RIGHTS: UInt32 = 65536
+
+func mach_port_send_valid(_ port: mach_port_t) -> Bool {
+    var type: mach_port_type_t = 0
+    
+    if mach_port_type(mach_task_self_, port, &type) != KERN_SUCCESS || (0 == (type & MACH_PORT_TYPE_SEND_RIGHTS)) {
+        print(type)
+        return false
+    }
+    
+    return true
+}
