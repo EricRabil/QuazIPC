@@ -12,6 +12,9 @@ let package = Package(
             targets: ["QuazIPC"]),
         .executable(name: "Example", targets: [
             "Example"
+        ]),
+        .executable(name: "NSXPCBridgingExample", targets: [
+            "NSXPCBridgingExample"
         ])
     ],
     dependencies: [
@@ -27,6 +30,7 @@ let package = Package(
             dependencies: ["CodableXPC"],
             linkerSettings: [LinkerSetting.linkedLibrary("bsm", .when(platforms: [.macOS]))]),
         .target(name: "Example", dependencies: ["QuazIPC"]),
+        .target(name: "NSXPCBridgingExample", dependencies: ["QuazIPC"]),
         .testTarget(
             name: "QuazIPCTests",
             dependencies: ["QuazIPC"]),

@@ -14,23 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "QuazIPC"
-               BuildableName = "QuazIPC"
-               BlueprintName = "QuazIPC"
-               ReferencedContainer = "container:">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "Example"
-               BuildableName = "Example"
-               BlueprintName = "Example"
+               BlueprintIdentifier = "NSXPCBridgingExample"
+               BuildableName = "NSXPCBridgingExample"
+               BlueprintName = "NSXPCBridgingExample"
                ReferencedContainer = "container:">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,20 +31,6 @@
                BlueprintIdentifier = "QuazIPCTests"
                BuildableName = "QuazIPCTests"
                BlueprintName = "QuazIPCTests"
-               ReferencedContainer = "container:">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "NSXPCBridgingExample"
-               BuildableName = "NSXPCBridgingExample"
-               BlueprintName = "NSXPCBridgingExample"
                ReferencedContainer = "container:">
             </BuildableReference>
          </BuildActionEntry>
@@ -86,7 +58,8 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      launchStyle = "0"
+      debugAsWhichUser = "root"
+      launchStyle = "1"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
@@ -102,15 +75,6 @@
             ReferencedContainer = "container:">
          </BuildableReference>
       </BuildableProductRunnable>
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "Example"
-            BuildableName = "Example"
-            BlueprintName = "Example"
-            ReferencedContainer = "container:">
-         </BuildableReference>
-      </MacroExpansion>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

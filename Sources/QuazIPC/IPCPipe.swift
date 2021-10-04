@@ -192,6 +192,11 @@ public extension IPCPipe {
         self.init(send_port: port, recv_port: recv_port)
     }
     
+    /// Register the receive port in an arbitrary bootstrap port
+    func x_bootstrap_register(_ bootstrap_port: mach_port_t, name: UnsafePointer<CChar>) -> kern_return_t {
+        bootstrap_register(bootstrap_port, name, recv_port)
+    }
+    
     func reconnect(remote name: UnsafePointer<CChar>) -> Bool {
         var port: mach_port_t = 0
         
